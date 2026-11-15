@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Eye Drop Reminder</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a7ea4">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f4f8fb;--card:#fff;--tx:#14232e;--mut:#64788a;--ac:#0a7ea4;--ok:#1f9d63;--bad:#d6453d;--bd:#dbe6ee;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e171d;--card:#16232c;--tx:#e8f1f6;--mut:#8aa1b1;--ac:#4cc3e8;--ok:#4fd08e;--bad:#ff7a70;--bd:#27394645;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e171d;--card:#16232c;--tx:#e8f1f6;--mut:#8aa1b1;--ac:#4cc3e8;--ok:#4fd08e;--bad:#ff7a70;--bd:#273946;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.4}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:1.3rem;margin:4px 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
+.next{border-color:var(--ac)}
+.next.due{border-color:var(--bad);animation:p 1.2s infinite}
+@keyframes p{50%{box-shadow:0 0 0 4px rgba(214,69,61,.25)}}
+.big{font-size:1.9rem;font-weight:700}
+.mut{color:var(--mut);font-size:.9rem}
+button{font:inherit;border:0;border-radius:10px;padding:9px 14px;background:var(--ac);color:#fff;cursor:pointer}
+button.g{background:transparent;color:var(--mut);border:1px solid var(--bd)}
+button.ok{background:var(--ok)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--bd)}
+.row.done{opacity:.55}.row.over .t{color:var(--bad);font-weight:600}
+.bar{height:6px;background:var(--bd);border-radius:4px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;background:var(--ok)}
+label{display:block;font-size:.85rem;color:var(--mut);margin:8px 0 2px}
+input{width:100%;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.top{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+</style>
+</head>
+<body>
+<main>
+<h1>👁️ Eye Drop Reminder</h1>
+<div class="mut" id="today" style="margin:-6px 0 12px"></div>
+<div class="top"><button id="perm" class="g">Enable alerts</button><span class="mut" id="ps">Keep this tab open to get alerts.</span></div>
+<div id="next"></div>
+<div id="list"></div>
+<div class="card"><b>Add another drop</b>
+<label>Name</label><input id="n" placeholder="e.g. Drop 2">
+<div class="g2"><div><label>Times per day</label><input id="pd" type="number" min="1" value="4"></div><div><label>Gap (hours)</label><input id="gp" type="number" min="0.5" step="0.5" value="3"></div>
+<div><label>First dose time</label><input id="ft" type="time" value="09:00"></div><div><label>Days</label><input id="dy" type="number" min="1" value="14"></div></div>
+<label>Start date</label><input id="sd" type="date">
+<p><button id="add">Add drop</button></p></div>
+<p class="mut">Tip: on your phone, also add a phone alarm — browsers can’t ring when the tab is closed.</p>
+</main>
+<script>
+const KEY='eyedrops-v4';
+const pad=n=>String(n).padStart(2,'0');
+const ds=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+let S=null;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.drops){
+ S={drops:[{id:'d1',name:'Moxicip',perDay:4,gap:3,first:'09:15',start:'2026-11-15',days:14},{id:'d2',name:'Carboxyl Refresh',perDay:4,gap:3,first:'10:15',start:'2026-11-15',days:30},{id:'d3',name:'Prednisolone',perDay:7,gap:2,first:'06:15',start:'2026-11-15',days:14}],done:{'d1|0|0':1,'d1|0|1':1,'d2|0|0':1,'d2|0|1':1,'d3|0|0':1,'d3|0|1':1,'d3|0|2':1,'d3|0|3':1}};
+ save();
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function when(d,day,k){const[y,m,dd]=d.start.split('-').map(Number);const[h,mi]=d.first.split(':').map(Number);return new Date(y,m-1,dd+day,h,mi+Math.round(k*d.gap*60))}
+const fmt=t=>t.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+const fmtD=t=>t.toLocaleDateString([],{weekday:'short',day:'numeric',month:'short'});
+function all(){const o=[];S.drops.forEach(d=>{for(let day=0;day<d.days;day++)for(let k=0;k<d.perDay;k++){const key=d.id+'|'+day+'|'+k;o.push({d,day,k,key,t:when(d,day,k),done:!!S.done[key]})}});return o.sort((a,b)=>a.t-b.t)}
+const notified=new Set();
+function beep(){try{const c=new (window.AudioContext||window.webkitAudioContext)();[0,.3,.6].forEach(s=>{const o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.15;o.start(c.currentTime+s);o.stop(c.currentTime+s+.18)})}catch(e){}}
+function alertDose(x){
+ if(notified.has(x.key))return;notified.add(x.key);beep();
+ const ti='Time for '+x.d.name,bo='Dose '+(x.k+1)+' of '+x.d.perDay+' · '+fmt(x.t);
+ try{if('Notification' in window&&Notification.permission==='granted'){
+  if(navigator.serviceWorker&&navigator.serviceWorker.ready)navigator.serviceWorker.ready.then(r=>r.showNotification(ti,{body:bo,icon:'icon-192.png',vibrate:[200,100,200,200],tag:x.key}));
+  else new Notification(ti,{body:bo});}}catch(e){}
+}
+function render(){
+ const now=new Date(),A=all(),todayS=ds(now);
+ document.getElementById('today').textContent=now.toLocaleDateString([],{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+ const pend=A.filter(x=>!x.done);
+ const nx=pend[0];
+ const N=document.getElementById('next');
+ if(nx){const diff=nx.t-now,due=diff<=0,m=Math.abs(Math.round(diff/60000));
+  const txt=due?'Due now'+(m>0?' ('+m+' min late)':''):(m>=60?Math.floor(m/60)+' h '+m%60+' min':m+' min');
+  N.innerHTML='<div class="card next '+(due?'due':'')+'"><div class="mut">Next: '+nx.d.name+' · dose '+(nx.k+1)+' of '+nx.d.perDay+'</div><div class="big">'+fmt(nx.t)+' <span class="mut">'+fmtD(nx.t)+'</span>'+'</div><div>'+(due?'<b style="color:var(--bad)">'+txt+'</b>':'in '+txt)+'</div><p><button class="ok" data-done="'+nx.key+'">✓ Done</button></p></div>';
+ }else N.innerHTML='<div class="card"><b>All doses complete 🎉</b></div>';
+ pend.filter(x=>x.t<=now).forEach(alertDose);
+ document.title=(nx&&nx.t<=now?'⏰ ':'')+'Eye Drop Reminder';
+ const L=document.getElementById('list');L.innerHTML='';
+ S.drops.forEach(d=>{
+  const mine=A.filter(x=>x.d.id===d.id),dn=mine.filter(x=>x.done).length;
+  const today=mine.filter(x=>ds(x.t)===todayS);
+  const end=when(d,d.days-1,0);
+  let sc='<details open style="margin-top:8px"><summary class="mut" style="cursor:pointer">Full schedule with dates</summary><div style="max-height:320px;overflow-y:auto">';
+  for(let day=0;day<d.days;day++){const dd=mine.filter(x=>x.day===day);sc+='<div class="row" style="align-items:flex-start"><b>'+fmtD(dd[0].t)+'</b><span style="text-align:right;font-size:.9rem">'+dd.map(x=>'<span style="'+(x.done?'color:var(--ok)':'')+'">'+fmt(x.t)+(x.done?' ✓':'')+'</span>').join(' · ')+'</span></div>'}
+  sc+='</div></details>';
+  let h='<div class="card"><div class="row" style="border:0;padding:0"><b>'+d.name+'</b><button class="g" data-del="'+d.id+'">Remove</button></div><div class="mut">'+d.perDay+'×/day, every '+d.gap+' h · '+fmtD(when(d,0,0))+' – '+fmtD(end)+'</div><div class="bar"><i style="width:'+Math.round(100*dn/mine.length)+'%"></i></div><div class="mut">'+dn+' of '+mine.length+' doses done</div>'+sc;
+  h+='<div class="mut" style="margin-top:8px"><b>Today · '+now.toLocaleDateString([],{weekday:'long',day:'numeric',month:'long',year:'numeric'})+'</b></div>';
+  if(!today.length)h+='<div class="row mut">No doses scheduled today.</div>';
+  today.forEach(x=>{const over=!x.done&&x.t<=now;h+='<div class="row '+(x.done?'done':'')+(over?' over':'')+'"><span class="t">'+fmt(x.t)+' <span class="mut">dose '+(x.k+1)+'</span></span>'+(x.done?'<button class="g" data-undo="'+x.key+'">Undo</button>':'<button class="'+(over?'ok':'g')+'" data-done="'+x.key+'">Done</button>')+'</div>'});
+  L.innerHTML+=h+'</div>';
+ });
+}
+document.addEventListener('click',e=>{
+ const t=e.target;
+ if(t.dataset.done){S.done[t.dataset.done]=1;save();render()}
+ else if(t.dataset.undo){delete S.done[t.dataset.undo];notified.delete(t.dataset.undo);save();render()}
+ else if(t.dataset.del){if(confirm('Remove this drop?')){S.drops=S.drops.filter(d=>d.id!==t.dataset.del);save();render()}}
+});
+document.getElementById('add').onclick=()=>{
+ const n=document.getElementById('n').value.trim()||'Drop';
+ S.drops.push({id:'d'+Date.now(),name:n,perDay:+document.getElementById('pd').value||1,gap:+document.getElementById('gp').value||3,first:document.getElementById('ft').value||'09:00',start:document.getElementById('sd').value||ds(new Date()),days:+document.getElementById('dy').value||1});
+ document.getElementById('n').value='';save();render();
+};
+document.getElementById('sd').value=ds(new Date());
+function ps(){const s=document.getElementById('ps');if(!('Notification' in window)){s.textContent='Alerts: sound only on this browser.';return}s.textContent=Notification.permission==='granted'?'Alerts on · keep this tab open.':'Keep this tab open to get alerts.'}
+document.getElementById('perm').onclick=()=>{beep();try{Notification.requestPermission().then(ps)}catch(e){}};
+ps();render();setInterval(render,15000);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
